@@ -1,0 +1,497 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SASE Beam Console</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  :root{
+    --bg: #ebeef2;
+    --panel: #f3f5f8;
+    --panel-line: #1e2830;
+    --amber: #ffb454;
+    --amber-dim: #7a5a2e;
+    --cyan: #5ccfe6;
+    --violet: #b39ddb;
+    --text: #031a25;
+    --text-dim: #6b7a83;
+    --grid: #1a2229;
+    --danger: #ff6b6b;
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  body{
+    background: var(--bg);
+    color: var(--text);
+    font-family:'JetBrains Mono', monospace;
+    min-height:100vh;
+    background-image:
+      radial-gradient(ellipse at top left, rgba(255,180,84,0.04), transparent 50%),
+      radial-gradient(ellipse at bottom right, rgba(92,207,230,0.04), transparent 50%);
+  }
+  .display{ font-family:'Space Grotesk', sans-serif; }
+
+  header{
+    border-bottom: 1px solid var(--panel-line);
+    padding: 18px 28px;
+    display:flex;
+    align-items:baseline;
+    justify-content:space-between;
+    flex-wrap:wrap;
+    gap:10px;
+  }
+  header .title-block{ display:flex; align-items:baseline; gap:14px; }
+  header h1{
+    font-family:'Space Grotesk', sans-serif;
+    font-weight:700;
+    font-size:1.15rem;
+    letter-spacing:0.02em;
+    color:#181716;
+  }
+  header .tag{
+    font-size:0.68rem;
+    color: var(--amber);
+    border:1px solid var(--amber-dim);
+    padding:2px 8px;
+    border-radius:2px;
+    letter-spacing:0.08em;
+  }
+  header .meta-line{
+    font-size:0.72rem;
+    color: var(--text-dim);
+    display:flex;
+    gap:18px;
+    flex-wrap:wrap;
+  }
+  header .meta-line b{ color: var(--text); font-weight:500; }
+  .live-dot{
+    display:inline-block; width:7px; height:7px; border-radius:50%;
+    background: var(--amber); margin-right:6px;
+    box-shadow:0 0 6px var(--amber);
+    animation: pulse 2s infinite ease-in-out;
+  }
+  @keyframes pulse{ 0%,100%{opacity:1;} 50%{opacity:0.35;} }
+  @media (prefers-reduced-motion: reduce){ .live-dot{ animation:none; } }
+
+  main{
+    padding: 22px 28px 60px;
+    display:grid;
+    grid-template-columns: 1.4fr 1fr;
+    gap:18px;
+    max-width:1400px;
+    margin:0 auto;
+  }
+  @media (max-width: 980px){ main{ grid-template-columns: 1fr; } }
+
+  .panel{
+    background: var(--panel);
+    border: 1px solid var(--panel-line);
+    border-radius: 4px;
+    padding: 16px 18px 20px;
+    position:relative;
+  }
+  .panel-label{
+    font-size:0.68rem;
+    letter-spacing:0.1em;
+    color: var(--text-dim);
+    text-transform:uppercase;
+    display:flex;
+    justify-content:space-between;
+    margin-bottom:10px;
+  }
+  .panel-label span.readout{ color: var(--amber); }
+
+  .span2{ grid-column: 1 / -1; }
+
+  .stat-grid{
+    display:grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap:12px;
+  }
+  @media (max-width:640px){ .stat-grid{ grid-template-columns: repeat(2,1fr); } }
+  .stat{
+    border-left: 2px solid var(--amber-dim);
+    padding-left:10px;
+  }
+  .stat .val{
+    font-family:'Space Grotesk', sans-serif;
+    font-size:1.55rem;
+    font-weight:600;
+    color:#35d021;
+    line-height:1.1;
+  }
+  .stat .val small{ font-size:0.8rem; color:var(--text-dim); font-weight:500;}
+  .stat .lbl{ font-size:0.66rem; color: var(--text-dim); letter-spacing:0.05em; margin-top:4px; text-transform:uppercase;}
+
+  .controls{
+    display:flex;
+    align-items:center;
+    gap:14px;
+    flex-wrap:wrap;
+    margin-bottom: 14px;
+  }
+  .controls label{ font-size:0.7rem; color:var(--text-dim); letter-spacing:0.05em;}
+  input[type=range]{
+    appearance:none;
+    -webkit-appearance:none;
+    width: 220px;
+    height:3px;
+    background: var(--grid);
+    border-radius:2px;
+    outline:none;
+  }
+  input[type=range]::-webkit-slider-thumb{
+    -webkit-appearance:none;
+    width:12px; height:12px;
+    border-radius:50%;
+    background: var(--amber);
+    cursor:pointer;
+    box-shadow:0 0 8px rgba(255,180,84,0.6);
+  }
+  button.btn{
+    background: transparent;
+    border: 1px solid var(--panel-line);
+    color: var(--text);
+    font-family:'JetBrains Mono', monospace;
+    font-size:0.68rem;
+    padding:6px 12px;
+    border-radius:3px;
+    cursor:pointer;
+    letter-spacing:0.05em;
+    transition: border-color .15s, color .15s;
+  }
+  button.btn:hover{ border-color: var(--amber); color: var(--amber); }
+  button.btn.active{ border-color: var(--amber); color: var(--amber); background: rgba(255,180,84,0.08); }
+
+  canvas{ max-width:100%; }
+  .chart-wrap{ position:relative; height: 260px; }
+  .chart-wrap.tall{ height: 320px; }
+
+  footer{
+    text-align:center;
+    padding: 20px;
+    font-size:0.66rem;
+    color: var(--text-dim);
+    letter-spacing:0.04em;
+  }
+  footer a{ color: var(--cyan); text-decoration:none; }
+
+  .legend-row{
+    display:flex; gap:16px; font-size:0.65rem; color:var(--text-dim); margin-top:8px; flex-wrap:wrap;
+  }
+  .legend-row span{ display:flex; align-items:center; gap:5px; }
+  .swatch{ width:9px; height:9px; border-radius:2px; display:inline-block; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="title-block">
+    <h1>SASE BEAM CONSOLE</h1>
+    <span class="tag">SIMULATED DATA</span>
+  </div>
+  <div class="meta-line">
+    <span><span class="live-dot"></span><b id="meta-beamline">--</b></span>
+    <span>TRAINS <b id="meta-trains">--</b></span>
+    <span>PULSES/TRAIN <b id="meta-pulses">--</b></span>
+    <span>NOMINAL E<sub>0</sub> <b id="meta-e0">--</b></span>
+  </div>
+</header>
+
+<main>
+
+  <section class="panel span2">
+    <div class="panel-label">BEAM CHARACTERIZATION &mdash; RUN SUMMARY (ALL TRAINS)</div>
+    <div class="stat-grid">
+      <div class="stat">
+        <div class="val" id="stat-energy">--<small> uJ</small></div>
+        <div class="lbl">Mean Pulse Energy</div>
+      </div>
+      <div class="stat">
+        <div class="val" id="stat-centroid">--<small> eV</small></div>
+        <div class="lbl">Mean Centroid E</div>
+      </div>
+      <div class="stat">
+        <div class="val" id="stat-bandwidth">--<small> eV</small></div>
+        <div class="lbl">Mean FWHM Bandwidth</div>
+      </div>
+      <div class="stat">
+        <div class="val" id="stat-spikes">--</div>
+        <div class="lbl">Mean Spectral Spikes</div>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-label">
+      <span>SINGLE-SHOT SPECTRUM</span>
+      <span class="readout" id="shot-readout">TRAIN 0 / PULSE 0</span>
+    </div>
+    <div class="controls">
+      <label>TRAIN</label>
+      <input type="range" id="train-slider" min="0" max="0" value="0">
+      <label>PULSE</label>
+      <input type="range" id="pulse-slider" min="0" max="0" value="0">
+    </div>
+    <div class="chart-wrap tall"><canvas id="spectrumChart"></canvas></div>
+    <div class="legend-row">
+      <span><span class="swatch" style="background:var(--amber)"></span>single pulse</span>
+      <span><span class="swatch" style="background:var(--text-dim)"></span>train-averaged envelope</span>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-label">
+      <span>XGM PULSE ENERGY &mdash; CURRENT TRAIN</span>
+      <span class="readout" id="xgm-readout">--</span>
+    </div>
+    <div class="chart-wrap tall"><canvas id="xgmChart"></canvas></div>
+    <div class="legend-row">
+      <span><span class="swatch" style="background:var(--cyan)"></span>pulse energy (&micro;J)</span>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-label">
+      <span>CENTROID vs BANDWIDTH</span>
+      <span class="readout">ALL PULSES</span>
+    </div>
+    <div class="chart-wrap"><canvas id="scatterChart"></canvas></div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-label">
+      <span>PULSE ENERGY DISTRIBUTION</span>
+      <span class="readout">ALL PULSES</span>
+    </div>
+    <div class="chart-wrap"><canvas id="histChart"></canvas></div>
+  </section>
+
+</main>
+
+<footer>
+  Synthetic dataset generated to mimic EuXFEL-style train/pulse indexed diagnostics (XGM + spectrometer).
+  Not real facility data. Built for learning SASE spectral analysis workflows.
+</footer>
+
+<script>
+const CHART_FONT = "'JetBrains Mono', monospace";
+Chart.defaults.font.family = CHART_FONT;
+Chart.defaults.color = '#6b7a83';
+Chart.defaults.borderColor = '#1a2229';
+
+let DATA = null;
+let charts = {};
+
+function fmt(n, d=2){ return Number(n).toFixed(d); }
+
+async function loadData(){
+  const res = await fetch('data/sase_data.json');
+  DATA = await res.json();
+  init();
+}
+
+function flattenPulses(){
+  const rows = [];
+  DATA.trains.forEach(t => {
+    t.pulses.forEach(p => {
+      rows.push({...p, train_id: t.train_id});
+    });
+  });
+  return rows;
+}
+
+function computeSummary(rows){
+  const mean = arr => arr.reduce((a,b)=>a+b,0)/arr.length;
+  return {
+    energy: mean(rows.map(r=>r.xgm_intensity_uj)),
+    centroid: mean(rows.map(r=>r.centroid_ev)),
+    bandwidth: mean(rows.map(r=>r.bandwidth_fwhm_ev)),
+    spikes: mean(rows.map(r=>r.n_spikes)),
+  };
+}
+
+function trainAverageSpectrum(train){
+  const n = DATA.meta.energy_axis_ev.length;
+  const avg = new Array(n).fill(0);
+  train.pulses.forEach(p => {
+    p.spectrum.forEach((v,i) => avg[i]+=v);
+  });
+  return avg.map(v => v/train.pulses.length);
+}
+
+function initMeta(){
+  document.getElementById('meta-beamline').textContent = DATA.meta.beamline;
+  document.getElementById('meta-trains').textContent = DATA.meta.n_trains;
+  document.getElementById('meta-pulses').textContent = DATA.meta.pulses_per_train;
+  document.getElementById('meta-e0').textContent = DATA.meta.nominal_centroid_ev + ' eV';
+}
+
+function initSummary(rows){
+  const s = computeSummary(rows);
+  document.getElementById('stat-energy').innerHTML = fmt(s.energy,1) + '<small> uJ</small>';
+  document.getElementById('stat-centroid').innerHTML = fmt(s.centroid,2) + '<small> eV</small>';
+  document.getElementById('stat-bandwidth').innerHTML = fmt(s.bandwidth,2) + '<small> eV</small>';
+  document.getElementById('stat-spikes').innerHTML = fmt(s.spikes,1);
+}
+
+function buildSpectrumChart(){
+  const ctx = document.getElementById('spectrumChart');
+  charts.spectrum = new Chart(ctx, {
+    type:'line',
+    data:{
+      labels: DATA.meta.energy_axis_ev,
+      datasets:[
+        {
+          label:'train average',
+          data: [],
+          borderColor:'#3a444c',
+          backgroundColor:'rgba(58,68,76,0.15)',
+          fill:true,
+          pointRadius:0,
+          borderWidth:1.5,
+          tension:0.15,
+        },
+        {
+          label:'single pulse',
+          data: [],
+          borderColor:'#ffb454',
+          backgroundColor:'rgba(255,180,84,0.08)',
+          fill:true,
+          pointRadius:0,
+          borderWidth:1.8,
+          tension:0.1,
+        },
+      ]
+    },
+    options:{
+      responsive:true, maintainAspectRatio:false,
+      animation:{duration:250},
+      plugins:{ legend:{display:false} },
+      scales:{
+        x:{ title:{display:true, text:'Photon Energy (eV)', color:'#6b7a83', font:{size:10}}, ticks:{maxTicksLimit:8, font:{size:9}}, grid:{color:'#151c22'} },
+        y:{ title:{display:true, text:'Normalized Intensity', color:'#6b7a83', font:{size:10}}, ticks:{font:{size:9}}, grid:{color:'#151c22'} }
+      }
+    }
+  });
+}
+
+function buildXgmChart(){
+  const ctx = document.getElementById('xgmChart');
+  charts.xgm = new Chart(ctx, {
+    type:'bar',
+    data:{ labels:[], datasets:[{ label:'XGM', data:[], backgroundColor:'#5ccfe6', borderRadius:1 }] },
+    options:{
+      responsive:true, maintainAspectRatio:false,
+      animation:{duration:250},
+      plugins:{ legend:{display:false} },
+      scales:{
+        x:{ title:{display:true,text:'Pulse index', color:'#6b7a83', font:{size:10}}, ticks:{maxTicksLimit:10, font:{size:9}}, grid:{display:false} },
+        y:{ title:{display:true,text:'Energy (uJ)', color:'#6b7a83', font:{size:10}}, ticks:{font:{size:9}}, grid:{color:'#151c22'} }
+      }
+    }
+  });
+}
+
+function buildScatterChart(rows){
+  const ctx = document.getElementById('scatterChart');
+  charts.scatter = new Chart(ctx, {
+    type:'scatter',
+    data:{ datasets:[{
+      label:'pulses',
+      data: rows.map(r => ({x:r.centroid_ev, y:r.bandwidth_fwhm_ev})),
+      backgroundColor:'rgba(179,157,219,0.45)',
+      pointRadius:2.5,
+    }]},
+    options:{
+      responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{display:false} },
+      scales:{
+        x:{ title:{display:true,text:'Centroid Energy (eV)', color:'#6b7a83', font:{size:10}}, ticks:{font:{size:9}}, grid:{color:'#151c22'} },
+        y:{ title:{display:true,text:'Bandwidth FWHM (eV)', color:'#6b7a83', font:{size:10}}, ticks:{font:{size:9}}, grid:{color:'#151c22'} }
+      }
+    }
+  });
+}
+
+function buildHistChart(rows){
+  const vals = rows.map(r=>r.xgm_intensity_uj);
+  const min = Math.min(...vals), max = Math.max(...vals);
+  const bins = 24;
+  const width = (max-min)/bins;
+  const counts = new Array(bins).fill(0);
+  vals.forEach(v => {
+    let idx = Math.floor((v-min)/width);
+    if(idx>=bins) idx = bins-1;
+    if(idx<0) idx = 0;
+    counts[idx]++;
+  });
+  const labels = counts.map((_,i) => (min + i*width).toFixed(0));
+
+  const ctx = document.getElementById('histChart');
+  charts.hist = new Chart(ctx, {
+    type:'bar',
+    data:{ labels, datasets:[{ label:'count', data:counts, backgroundColor:'#ffb454', borderRadius:1 }]},
+    options:{
+      responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{display:false} },
+      scales:{
+        x:{ title:{display:true,text:'Pulse energy (uJ)', color:'#6b7a83', font:{size:10}}, ticks:{maxTicksLimit:8, font:{size:9}}, grid:{display:false} },
+        y:{ title:{display:true,text:'Count', color:'#6b7a83', font:{size:10}}, ticks:{font:{size:9}}, grid:{color:'#151c22'} }
+      }
+    }
+  });
+}
+
+function updateShotView(trainIdx, pulseIdx){
+  const train = DATA.trains[trainIdx];
+  const pulse = train.pulses[pulseIdx];
+  const avgSpec = trainAverageSpectrum(train);
+
+  charts.spectrum.data.datasets[0].data = avgSpec;
+  charts.spectrum.data.datasets[1].data = pulse.spectrum;
+  charts.spectrum.update('none');
+
+  document.getElementById('shot-readout').textContent =
+    `TRAIN ${train.train_id} / PULSE ${pulse.pulse_id}  |  Ec=${fmt(pulse.centroid_ev,2)} eV  BW=${fmt(pulse.bandwidth_fwhm_ev,2)} eV  N_spikes=${pulse.n_spikes}`;
+
+  charts.xgm.data.labels = train.pulses.map(p=>p.pulse_id);
+  charts.xgm.data.datasets[0].data = train.pulses.map(p=>p.xgm_intensity_uj);
+  charts.xgm.data.datasets[0].backgroundColor = train.pulses.map((p,i) => i===pulseIdx ? '#ffb454' : '#5ccfe6');
+  charts.xgm.update('none');
+
+  const trainMeanE = train.pulses.reduce((a,p)=>a+p.xgm_intensity_uj,0)/train.pulses.length;
+  document.getElementById('xgm-readout').textContent = `TRAIN MEAN ${fmt(trainMeanE,1)} uJ`;
+}
+
+function init(){
+  initMeta();
+  const rows = flattenPulses();
+  initSummary(rows);
+
+  buildSpectrumChart();
+  buildXgmChart();
+  buildScatterChart(rows);
+  buildHistChart(rows);
+
+  const trainSlider = document.getElementById('train-slider');
+  const pulseSlider = document.getElementById('pulse-slider');
+  trainSlider.max = DATA.trains.length - 1;
+  pulseSlider.max = DATA.meta.pulses_per_train - 1;
+
+  function refresh(){
+    updateShotView(parseInt(trainSlider.value), parseInt(pulseSlider.value));
+  }
+  trainSlider.addEventListener('input', refresh);
+  pulseSlider.addEventListener('input', refresh);
+
+  refresh();
+}
+
+loadData();
+</script>
+
+</body>
+</html>
