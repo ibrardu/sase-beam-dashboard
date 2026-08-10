@@ -164,6 +164,46 @@
   }
   button.btn:hover{ border-color: var(--amber); color: var(--amber); }
   button.btn.active{ border-color: var(--amber); color: var(--amber); background: rgba(255,180,84,0.08); }
+  button.btn.play{
+    border-color: var(--amber);
+    color: var(--amber);
+  }
+  button.btn.play.running{
+    background: rgba(255,180,84,0.14);
+    box-shadow: 0 0 10px rgba(255,180,84,0.25);
+  }
+  select.speed{
+    background: var(--bg);
+    border: 1px solid var(--panel-line);
+    color: var(--text);
+    font-family:'JetBrains Mono', monospace;
+    font-size:0.68rem;
+    padding:5px 8px;
+    border-radius:3px;
+  }
+  .acq-counter{
+    font-family:'Space Grotesk', sans-serif;
+    font-size:0.72rem;
+    color: var(--text-dim);
+  }
+  .acq-counter b{ color: var(--amber); }
+  .stream-track{
+    height: 260px;
+    position:relative;
+  }
+  .beam-indicator{
+    display:inline-flex; align-items:center; gap:6px;
+    font-size:0.66rem; color: var(--text-dim);
+  }
+  .beam-indicator .dot{
+    width:6px; height:6px; border-radius:50%;
+    background: var(--text-dim);
+  }
+  .beam-indicator.on .dot{
+    background: var(--amber);
+    box-shadow: 0 0 6px var(--amber);
+    animation: pulse 0.6s infinite ease-in-out;
+  }
 
   canvas{ max-width:100%; }
   .chart-wrap{ position:relative; height: 260px; }
@@ -230,6 +270,17 @@
       <span class="readout" id="shot-readout">TRAIN 0 / PULSE 0</span>
     </div>
     <div class="controls">
+      <button class="btn play" id="play-btn">&#9654; LIVE</button>
+      <label>SPEED</label>
+      <select class="speed" id="speed-select">
+        <option value="600">1x</option>
+        <option value="300" selected>2x</option>
+        <option value="120">5x</option>
+        <option value="40">15x</option>
+      </select>
+      <span class="beam-indicator" id="beam-indicator"><span class="dot"></span><span id="beam-indicator-txt">idle</span></span>
+    </div>
+    <div class="controls">
       <label>TRAIN</label>
       <input type="range" id="train-slider" min="0" max="0" value="0">
       <label>PULSE</label>
@@ -239,17 +290,18 @@
     <div class="legend-row">
       <span><span class="swatch" style="background:var(--amber)"></span>single pulse</span>
       <span><span class="swatch" style="background:var(--text-dim)"></span>train-averaged envelope</span>
+      <span class="acq-counter" style="margin-left:auto;">ACQUIRED <b id="acq-counter">0</b> / <span id="acq-total">0</span></span>
     </div>
   </section>
 
   <section class="panel">
     <div class="panel-label">
-      <span>XGM PULSE ENERGY &mdash; CURRENT TRAIN</span>
+      <span>XGM LIVE STREAM</span>
       <span class="readout" id="xgm-readout">--</span>
     </div>
-    <div class="chart-wrap tall"><canvas id="xgmChart"></canvas></div>
+    <div class="stream-track"><canvas id="xgmChart"></canvas></div>
     <div class="legend-row">
-      <span><span class="swatch" style="background:var(--cyan)"></span>pulse energy (&micro;J)</span>
+      <span><span class="swatch" style="background:var(--cyan)"></span>pulse energy (&micro;J), rolling window</span>
     </div>
   </section>
 
@@ -284,6 +336,13 @@ Chart.defaults.borderColor = '#1a2229';
 
 let DATA = null;
 let charts = {};
+let FLAT_ROWS = [];
+let PULSES_PER_TRAIN = 0;
+let TOTAL_PULSES = 0;
+let globalPulseIndex = 0;
+let playTimer = null;
+let isPlaying = false;
+const STREAM_WINDOW = 50;
 
 function fmt(n, d=2){ return Number(n).toFixed(d); }
 
@@ -381,18 +440,43 @@ function buildSpectrumChart(){
 function buildXgmChart(){
   const ctx = document.getElementById('xgmChart');
   charts.xgm = new Chart(ctx, {
-    type:'bar',
-    data:{ labels:[], datasets:[{ label:'XGM', data:[], backgroundColor:'#5ccfe6', borderRadius:1 }] },
+    type:'line',
+    data:{
+      labels:[],
+      datasets:[{
+        label:'XGM',
+        data: [],
+        borderColor:'#5ccfe6',
+        backgroundColor:'rgba(92,207,230,0.12)',
+        fill:true,
+        pointRadius:(ctx)=> ctx.dataIndex === ctx.dataset.data.length-1 ? 3.5 : 0,
+        pointBackgroundColor:'#ffb454',
+        borderWidth:1.6,
+        tension:0.25,
+      }]
+    },
     options:{
       responsive:true, maintainAspectRatio:false,
-      animation:{duration:250},
+      animation:{duration:180},
       plugins:{ legend:{display:false} },
       scales:{
-        x:{ title:{display:true,text:'Pulse index', color:'#6b7a83', font:{size:10}}, ticks:{maxTicksLimit:10, font:{size:9}}, grid:{display:false} },
+        x:{ title:{display:true,text:'Acquisition index (global pulse count)', color:'#6b7a83', font:{size:10}}, ticks:{maxTicksLimit:8, font:{size:9}}, grid:{display:false} },
         y:{ title:{display:true,text:'Energy (uJ)', color:'#6b7a83', font:{size:10}}, ticks:{font:{size:9}}, grid:{color:'#151c22'} }
       }
     }
   });
+}
+
+function updateStream(globalIdx){
+  const start = Math.max(0, globalIdx - STREAM_WINDOW + 1);
+  const windowRows = FLAT_ROWS.slice(start, globalIdx + 1);
+  charts.xgm.data.labels = windowRows.map((_, i) => start + i);
+  charts.xgm.data.datasets[0].data = windowRows.map(r => r.xgm_intensity_uj);
+  charts.xgm.update('none');
+
+  const current = FLAT_ROWS[globalIdx];
+  document.getElementById('xgm-readout').textContent =
+    `LATEST ${fmt(current.xgm_intensity_uj,1)} uJ`;
 }
 
 function buildScatterChart(rows){
@@ -457,19 +541,58 @@ function updateShotView(trainIdx, pulseIdx){
   document.getElementById('shot-readout').textContent =
     `TRAIN ${train.train_id} / PULSE ${pulse.pulse_id}  |  Ec=${fmt(pulse.centroid_ev,2)} eV  BW=${fmt(pulse.bandwidth_fwhm_ev,2)} eV  N_spikes=${pulse.n_spikes}`;
 
-  charts.xgm.data.labels = train.pulses.map(p=>p.pulse_id);
-  charts.xgm.data.datasets[0].data = train.pulses.map(p=>p.xgm_intensity_uj);
-  charts.xgm.data.datasets[0].backgroundColor = train.pulses.map((p,i) => i===pulseIdx ? '#ffb454' : '#5ccfe6');
-  charts.xgm.update('none');
+  const globalIdx = trainIdx * PULSES_PER_TRAIN + pulseIdx;
+  globalPulseIndex = globalIdx;
+  updateStream(globalIdx);
 
-  const trainMeanE = train.pulses.reduce((a,p)=>a+p.xgm_intensity_uj,0)/train.pulses.length;
-  document.getElementById('xgm-readout').textContent = `TRAIN MEAN ${fmt(trainMeanE,1)} uJ`;
+  document.getElementById('acq-counter').textContent = globalIdx + 1;
+}
+
+function setSlidersFromGlobalIndex(idx){
+  const trainIdx = Math.floor(idx / PULSES_PER_TRAIN);
+  const pulseIdx = idx % PULSES_PER_TRAIN;
+  document.getElementById('train-slider').value = trainIdx;
+  document.getElementById('pulse-slider').value = pulseIdx;
+  return { trainIdx, pulseIdx };
+}
+
+function step(){
+  globalPulseIndex = (globalPulseIndex + 1) % TOTAL_PULSES;
+  const { trainIdx, pulseIdx } = setSlidersFromGlobalIndex(globalPulseIndex);
+  updateShotView(trainIdx, pulseIdx);
+}
+
+function setPlaying(on){
+  isPlaying = on;
+  const btn = document.getElementById('play-btn');
+  const indicator = document.getElementById('beam-indicator');
+  const indicatorTxt = document.getElementById('beam-indicator-txt');
+
+  if (on){
+    btn.innerHTML = '&#10074;&#10074; PAUSE';
+    btn.classList.add('running');
+    indicator.classList.add('on');
+    indicatorTxt.textContent = 'acquiring';
+    const speed = parseInt(document.getElementById('speed-select').value);
+    playTimer = setInterval(step, speed);
+  } else {
+    btn.innerHTML = '&#9654; LIVE';
+    btn.classList.remove('running');
+    indicator.classList.remove('on');
+    indicatorTxt.textContent = 'idle';
+    clearInterval(playTimer);
+  }
 }
 
 function init(){
   initMeta();
   const rows = flattenPulses();
+  FLAT_ROWS = rows;
+  PULSES_PER_TRAIN = DATA.meta.pulses_per_train;
+  TOTAL_PULSES = rows.length;
   initSummary(rows);
+
+  document.getElementById('acq-total').textContent = TOTAL_PULSES;
 
   buildSpectrumChart();
   buildXgmChart();
@@ -481,13 +604,20 @@ function init(){
   trainSlider.max = DATA.trains.length - 1;
   pulseSlider.max = DATA.meta.pulses_per_train - 1;
 
-  function refresh(){
+  function refreshFromSliders(){
+    if (isPlaying) setPlaying(false);
     updateShotView(parseInt(trainSlider.value), parseInt(pulseSlider.value));
   }
-  trainSlider.addEventListener('input', refresh);
-  pulseSlider.addEventListener('input', refresh);
+  trainSlider.addEventListener('input', refreshFromSliders);
+  pulseSlider.addEventListener('input', refreshFromSliders);
 
-  refresh();
+  document.getElementById('play-btn').addEventListener('click', () => setPlaying(!isPlaying));
+  document.getElementById('speed-select').addEventListener('change', () => {
+    if (isPlaying){ setPlaying(false); setPlaying(true); }
+  });
+
+  updateShotView(0, 0);
+  setPlaying(true);
 }
 
 loadData();
